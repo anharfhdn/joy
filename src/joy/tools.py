@@ -70,6 +70,12 @@ def _clip(text: str) -> str:
     return text if len(text) <= OUTPUT_LIMIT else text[:OUTPUT_LIMIT] + "\n[output truncated]"
 
 
+def _diff(original: str, updated: str, path: str) -> str:
+    def lines(text: str) -> list[str]:
+        return [line if line.endswith("\n") else line + "\n" for line in text.splitlines()]
+    return "".join(unified_diff(lines(original), lines(updated), fromfile=path, tofile=path))
+
+
 def _save(path: Path, content: str) -> None:
     data = content.encode("utf-8")
     if len(data) > FILE_LIMIT:
@@ -115,8 +121,10 @@ def create_tools(workspace: Path, cancelled: Event) -> Tools:
     def write(path: str, content: str) -> str:
         """Create or overwrite a UTF-8 file, creating parent directories if needed."""
         with MUTATION_LOCK:
-            _save(resolve(path), content)
-        return f"Wrote {path}."
+            target = resolve(path)
+            original = target.read_bytes().decode("utf-8") if target.exists() else ""
+            _save(target, content)
+        return _clip(f"Wrote {path}.\n{_diff(original, content, path)}")
 
     def edit(path: str, old_text: str, new_text: str) -> str:
         """Replace unique old_text with new_text. Exact match first, then tolerate trailing
@@ -134,10 +142,7 @@ def create_tools(workspace: Path, cancelled: Event) -> Tools:
             if target.read_bytes().decode("utf-8") != original:
                 raise ValueError("File changed during editing. Read it and retry.")
             _save(target, updated)
-        diff = "".join(unified_diff(original.splitlines(keepends=True),
-                                    updated.splitlines(keepends=True),
-                                    fromfile=path, tofile=path))
-        return _clip(f"Edited {path}.\n{diff}")
+        return _clip(f"Edited {path}.\n{_diff(original, updated, path)}")
 
     def bash(command: str, timeout: int = 30) -> str:
         """Run a noninteractive Bash command in the workspace; timeout is 1–300 seconds."""
@@ -167,6 +172,8 @@ def create_tools(workspace: Path, cancelled: Event) -> Tools:
                 process.wait()
             output.seek(0)
             text = output.read(OUTPUT_LIMIT + 1).decode("utf-8", errors="replace")
-            return f"{reason or 'Finished'}; exit code {process.returncode}\n{_clip(text)}"
+            if process.returncode == 0 and not reason:
+                return _clip(text)
+            return f"{reason or 'exit code'} {process.returncode}\n{_clip(text)}"
 
     return Tools([read, write, edit, bash])

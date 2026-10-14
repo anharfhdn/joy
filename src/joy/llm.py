@@ -24,6 +24,7 @@ def get_model() -> str:
 class ToolEvent:
     name: str
     status: str
+    output: str | None = None
 
 def _error_message(error: Exception) -> str:
     # Preserve useful diagnostics from wrapped errors without printing raw messages.
@@ -119,7 +120,7 @@ async def stream_reply(messages: list[dict]) -> AsyncIterator[str | ToolEvent]:
                     except Exception as error:
                         output = f"Tool error: {error}"
                         status = "failed"
-                    result.put(ToolEvent(name, status))
+                    result.put(ToolEvent(name, status, output))
                     conversation.append({"type": "function_call_output", "call_id": call.call_id,
                                          "output": json.dumps(output)})
                 if text:
