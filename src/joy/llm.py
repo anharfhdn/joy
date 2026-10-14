@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 from collections.abc import AsyncIterator
 from contextlib import suppress
@@ -14,14 +15,15 @@ from openai import OpenAI, APIConnectionError, APIStatusError, APITimeoutError
 
 from joy.tools import create_tools
 
-MODEL = "openai:gpt-5.6-luna"
+DEFAULT_MODEL = "openai:gpt-5.6-luna"
 
+def get_model() -> str:
+    return os.environ.get("JOY_MODEL_OVERRIDE") or DEFAULT_MODEL
 
 @dataclass(frozen=True)
 class ToolEvent:
     name: str
     status: str
-
 
 def _error_message(error: Exception) -> str:
     # Preserve useful diagnostics from wrapped errors without printing raw messages.
@@ -37,7 +39,7 @@ def _error_message(error: Exception) -> str:
             400: "The API rejected the request parameters.",
             401: "The API rejected your API key.",
             403: "Your account lacks permission for this request.",
-            404: f"Check access to {MODEL} and your API base URL.",
+            404: f"Check access to {get_model()} and your API base URL.",
             429: "Rate limit or quota exceeded; check API usage and billing.",
         }
         details = []
@@ -66,7 +68,8 @@ async def stream_reply(messages: list[dict]) -> AsyncIterator[str | ToolEvent]:
     def request() -> None:
         client = None
         try:
-            client = OpenAI(timeout=60.0, max_retries=0)
+            base_url = os.environ.get("OPENAI_BASE_URL")
+            client = OpenAI(timeout=60.0, max_retries=0, base_url=base_url)
             toolbox = create_tools(workspace, cancelled)
             conversation = list(messages)
             for _ in range(16):
@@ -75,7 +78,7 @@ async def stream_reply(messages: list[dict]) -> AsyncIterator[str | ToolEvent]:
                 text = ""
                 completed = None
                 with client.responses.create(
-                    model=MODEL.split(":", 1)[1], input=conversation, stream=True,
+                    model=get_model().split(":", 1)[1], input=conversation, stream=True,
                     reasoning={"effort": "medium"}, store=False,
                     include=["reasoning.encrypted_content"],
                     tools=[{"type": "function", **tool["function"], "strict": False}
