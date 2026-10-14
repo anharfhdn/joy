@@ -11,7 +11,7 @@ from unittest.mock import patch
 import httpx
 from openai import OpenAI
 
-from joy.llm import MODEL, ToolEvent, stream_reply
+from joy.llm import get_model, ToolEvent, stream_reply
 
 
 def sse(events):
@@ -36,8 +36,8 @@ class LlmTest(unittest.IsolatedAsyncioTestCase):
         transport = httpx.Client(transport=httpx.MockTransport(respond))
         self.addCleanup(transport.close)
         return patch('joy.llm.OpenAI', side_effect=lambda **config: OpenAI(
-            **config, api_key='test-key', base_url='https://api.openai.com/v1',
-            http_client=transport,
+            **{**config, 'base_url': 'https://api.openai.com/v1',
+               'api_key': 'test-key', 'http_client': transport},
         ))
 
     async def test_reasoning_survives_tool_call_and_continuation(self):
@@ -73,7 +73,12 @@ class LlmTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch('joy.llm.Path.cwd', return_value=Path(directory)), self.client_patch(respond):
                 chunks = [chunk async for chunk in stream_reply([{'role': 'user', 'content': 'Create it'}])]
-            self.assertEqual(chunks, [ToolEvent('write', 'running'), ToolEvent('write', 'finished'), 'Created it.'])
+            self.assertEqual(chunks, [
+                ToolEvent('write', 'running'),
+                ToolEvent('write', 'finished', 'Wrote hello.txt.\n'
+                           '--- hello.txt\n+++ hello.txt\n@@ -0,0 +1 @@\n+hello\n'),
+                'Created it.',
+            ])
             self.assertEqual((Path(directory) / 'hello.txt').read_text(), 'hello')
         self.assertEqual(len(payloads), 2)
 
@@ -85,7 +90,7 @@ class LlmTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status, mode=mode):
                 def respond(request):
                     payload = json.loads(request.content)
-                    self.assertEqual(payload['model'], MODEL.split(':', 1)[1])
+                    self.assertEqual(payload['model'], get_model().split(':', 1)[1])
                     self.assertEqual(payload['input'], messages)
                     self.assertTrue(payload['stream'])
                     if status != 200:

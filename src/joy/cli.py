@@ -281,7 +281,7 @@ def main() -> None:
             break
         if not message:
             continue
-        handled, history = handle_slash_command(message, [], console, pending_diffs)
+        handled, history = handle_slash_command(message, history, console, pending_diffs)
         if handled:
             continue
         if message:

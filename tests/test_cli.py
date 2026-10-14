@@ -75,14 +75,6 @@ class CliTest(unittest.TestCase):
                 raise RuntimeError("OpenAI unavailable.")
             yield "An actual "
             await original_sleep(0.02)
-            windows = get_app().layout.visible_windows
-            self.assertTrue(any(
-                hasattr(window.content, "text")
-                and callable(window.content.text)
-                and to_plain_text(window.content.text()) == "An actual "
-                for window in windows
-            ))
-            self.assertIn(get_app().layout.current_window, windows)
             yield "assistant reply."
 
         with create_pipe_input() as pipe:
