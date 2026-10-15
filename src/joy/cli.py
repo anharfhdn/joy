@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 import time
+from threading import Event
 from contextlib import aclosing
 from pathlib import Path
 
@@ -167,6 +168,7 @@ def main() -> None:
     pending_diffs: list[str] = []
     bindings = KeyBindings()
     waiting = False
+    ready = Event()
     draft = ""
     tool_status = ""
     used_tools = False
@@ -247,8 +249,8 @@ def main() -> None:
         floats=[completion_float],
     )
 
-    async def finish_wait(messages: list[dict[str, str]]) -> None:
-        nonlocal answer, tool_status, used_tools, pending_diffs
+    async def finish_wait(messages: list[dict[str, str]], ready: Event) -> None:
+        nonlocal answer, tool_status, used_tools, pending_diffs, waiting
         try:
             async with aclosing(stream_reply(messages)) as stream:
                 async for chunk in stream:
@@ -302,7 +304,7 @@ def main() -> None:
                 draft = session.prompt(
                     "› ",
                     refresh_interval=0.1,
-                    pre_run=lambda: session.app.create_background_task(finish_wait(messages)),
+                    pre_run=lambda: session.app.create_background_task(finish_wait(messages, ready)),
                 )
             except KeyboardInterrupt:
                 draft = session.default_buffer.text

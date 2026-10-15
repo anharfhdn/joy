@@ -58,7 +58,6 @@ def _parse_rows(output: str) -> tuple[str, list[tuple[int | None, str, str]]]:
     for line in output.splitlines():
         if line.startswith("Wrote ") or line.startswith("Edited "):
             path = line.split(maxsplit=1)[1].rstrip(".")
-            break
     rows: list[tuple[int | None, str, str]] = []
     new_line = 0
     in_diff = False
@@ -66,7 +65,9 @@ def _parse_rows(output: str) -> tuple[str, list[tuple[int | None, str, str]]]:
     for line in output.splitlines():
         if line.startswith("--- "):
             in_diff = True
-            continue
+        elif not in_diff:
+            if not any(l.startswith(("Wrote ", "Edited ")) for l in output.splitlines()[:output.splitlines().index(line)]):
+                continue
         if not in_diff:
             continue
         if line.startswith("+++ "):
